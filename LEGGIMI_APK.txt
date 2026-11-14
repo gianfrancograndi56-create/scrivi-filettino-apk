@@ -1,0 +1,44 @@
+====================================================================
+FILETTINO APP - PROGETTO APK ANDROID NATIVA (V.33.2)
+====================================================================
+Questo pacchetto contiene l'app Android nativa per far squillare il
+telefono e aprire la schermata chiamata SOPRA IL BLOCCO SCHERMO
+anche ad app completamente chiusa.
+
+PASSAGGIO 1 — Scarica google-services.json (GRATIS da Firebase)
+1. Apri https://console.firebase.google.com/project/mythic-influence-mtvkm/settings/general
+2. Scorri fino a "Le tue app" -> Clicca "Aggiungi app" -> scegli Android.
+3. Come "Nome pacchetto Android" scrivi ESATTAMENTE:
+      it.filettino.app
+4. Clicca "Registra app", poi clicca "Scarica google-services.json".
+5. Copia il file google-services.json dentro la cartella:
+      app/google-services.json
+
+PASSAGGIO 2 — Genera il file filettino-app.apk (2 modi gratuiti)
+MODO A — SU GITHUB (GRATIS 0 €, senza installare programmi sul PC):
+1. Crea un repository gratuito su https://github.com/new (anche privato).
+2. Carica tutto il contenuto di questo ZIP nel repository.
+   (Assicurati che sia presente .github/workflows/build-apk.yml)
+3. Apri la scheda "Actions" nel repository -> "Compila APK Android Filettino App".
+4. Dopo ~3 minuti clicca "Run workflow" (o attendi la fine automatica) e
+   scarica "filettino-app-android-apk" (contiene app-debug.apk pronta!).
+
+MODO B — CON ANDROID STUDIO (su Windows / Mac):
+1. Apri questa cartella con Android Studio.
+2. Attendi la sincronizzazione Gradle.
+3. Nel menu in alto: Build -> Build Bundle(s) / APK(s) -> Build APK(s).
+
+PASSAGGIO 3 — Abilita l'invio del segnale sveglia-APK su Cloudflare Pages
+1. Nella Console Firebase -> Impostazioni progetto -> Account di servizio:
+   clicca "Genera nuova chiave privata" (scarica un file .json).
+2. Apri Cloudflare Dashboard -> Workers & Pages -> filettino-app ->
+   Settings -> Environment variables (Production).
+3. Aggiungi la variabile segreta chiamata:
+      FIREBASE_SERVICE_ACCOUNT_JSON
+   e incolla dentro tutto il testo di quel file .json, poi salva/redeploy.
+
+PASSAGGIO 4 — Primo avvio sul telefono Android
+1. Installa l'APK e consenti Microfono, Fotocamera e Notifiche.
+2. Su Android 14/15: se richiesto dalle impostazioni dell'app, consenti
+   "Notifiche a schermo intero" e disattiva il risparmio batteria per Filettino.
+====================================================================

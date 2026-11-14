@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "358256260604",
+    "project_id": "filettino-push",
+    "storage_bucket": "filettino-push.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:358256260604:android:bc77d85e469612f251ee79",
+        "android_client_info": {
+          "package_name": "it.filettino.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBvYekFu057HuLLH7vLYFxGAF3cd2UmUhQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
