@@ -19,8 +19,13 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Configura Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Prepara Android SDK
+        run: |
+          SDK_MGR=$(command -v sdkmanager || ls /usr/local/lib/android/sdk/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -n 1)
+          if [ -n "$SDK_MGR" ]; then
+            yes | "$SDK_MGR" --licenses >/dev/null 2>&1 || true
+            "$SDK_MGR" "platforms;android-34" "build-tools;34.0.0" || true
+          fi
 
       - name: Configura Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
@@ -28,11 +33,18 @@ jobs:
           gradle-version: '8.7'
 
       - name: Compila Filettino App APK
-        run: gradle assembleDebug --no-daemon
+        run: |
+          SETTINGS_FILE=$(find . -maxdepth 3 -name 'settings.gradle' | head -n 1)
+          if [ -z "$SETTINGS_FILE" ]; then
+            echo "Errore: settings.gradle non trovato"
+            exit 1
+          fi
+          cd "$(dirname "$SETTINGS_FILE")"
+          gradle assembleDebug --no-daemon
 
       - name: Pubblica filettino-app.apk scaricabile
         uses: actions/upload-artifact@v4
         with:
           name: filettino-app-android-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: '**/app/build/outputs/apk/debug/app-debug.apk'
           retention-days: 90
