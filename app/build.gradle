@@ -15,8 +15,8 @@ android {
         applicationId "it.filettino.app"
         minSdk 24
         targetSdk 34
-        versionCode 33
-        versionName "33.2"
+        versionCode 60
+        versionName "58.5"
     }
 
     buildTypes {
