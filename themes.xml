@@ -1,0 +1,12 @@
+<resources>
+    <style name="Theme.Filettino" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:statusBarColor">#141613</item>
+        <item name="android:navigationBarColor">#121411</item>
+    </style>
+
+    <style name="Theme.Filettino.CallScreen" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:statusBarColor">#0F140B</item>
+        <item name="android:navigationBarColor">#0F140B</item>
+        <item name="android:windowShowWallpaper">false</item>
+    </style>
+</resources>
