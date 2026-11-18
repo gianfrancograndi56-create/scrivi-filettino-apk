@@ -15,7 +15,32 @@ object CallSignalConstants {
     const val PREFS_NAME = "filettino_native_prefs"
     const val KEY_FCM_TOKEN = "fcm_token"
     const val KEY_USER_ID = "user_id"
+    const val KEY_AUTH_TOKEN = "firebase_auth_token"
     const val KEY_PENDING_CALL_JSON = "pending_call_json"
+
+    @Volatile
+    private var cachedAuthToken: String = ""
+
+    fun saveAuthToken(context: Context, token: String) {
+        val clean = token.trim()
+        cachedAuthToken = clean
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_AUTH_TOKEN, clean)
+            .apply()
+    }
+
+    fun getAuthToken(context: Context? = null): String {
+        if (context != null) {
+            val stored = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getString(KEY_AUTH_TOKEN, "") ?: ""
+            if (stored.isNotBlank()) {
+                cachedAuthToken = stored
+                return stored
+            }
+        }
+        return cachedAuthToken
+    }
 
     const val CHANNEL_INCOMING_CALLS = "filettino_incoming_calls_v1"
     const val NOTIF_ID_INCOMING_CALL = 3302
@@ -55,15 +80,19 @@ object CallSignalConstants {
             .apply()
     }
 
-    fun isCallStillRinging(callId: String): Boolean {
+    fun isCallStillRinging(callId: String, context: Context? = null): Boolean {
         if (callId.isBlank() || callId.startsWith("push_")) return true
         return try {
             val encoded = URLEncoder.encode(callId, "UTF-8")
             val url = URL("$FIRESTORE_BASE/chiamate/$encoded")
+            val authToken = getAuthToken(context)
             val conn = (url.openConnection() as HttpURLConnection).apply {
                 connectTimeout = 4000
                 readTimeout = 4000
                 requestMethod = "GET"
+                if (authToken.isNotBlank()) {
+                    setRequestProperty("Authorization", "Bearer $authToken")
+                }
             }
             val code = conn.responseCode
             if (code !in 200..299) {
@@ -82,16 +111,20 @@ object CallSignalConstants {
         }
     }
 
-    fun patchCallStatus(callId: String, status: String) {
+    fun patchCallStatus(callId: String, status: String, context: Context? = null) {
         if (callId.isBlank() || callId.startsWith("push_")) return
         try {
             val encoded = URLEncoder.encode(callId, "UTF-8")
             val url = URL("$FIRESTORE_BASE/chiamate/$encoded?updateMask.fieldPaths=status")
+            val authToken = getAuthToken(context)
             val conn = (url.openConnection() as HttpURLConnection).apply {
                 connectTimeout = 5000
                 readTimeout = 5000
                 requestMethod = "PATCH"
                 setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+                if (authToken.isNotBlank()) {
+                    setRequestProperty("Authorization", "Bearer $authToken")
+                }
                 doOutput = true
             }
             val payload = JSONObject().apply {
@@ -109,16 +142,20 @@ object CallSignalConstants {
         }
     }
 
-    fun patchUserFcmToken(userId: String, fcmToken: String) {
+    fun patchUserFcmToken(userId: String, fcmToken: String, context: Context? = null) {
         if (userId.isBlank() || fcmToken.isBlank()) return
         try {
             val encoded = URLEncoder.encode(userId, "UTF-8")
             val url = URL("$FIRESTORE_BASE/utenti/$encoded?updateMask.fieldPaths=fcmToken&updateMask.fieldPaths=fcmUpdatedAt")
+            val authToken = getAuthToken(context)
             val conn = (url.openConnection() as HttpURLConnection).apply {
                 connectTimeout = 5000
                 readTimeout = 5000
                 requestMethod = "PATCH"
                 setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+                if (authToken.isNotBlank()) {
+                    setRequestProperty("Authorization", "Bearer $authToken")
+                }
                 doOutput = true
             }
             val nowIso = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US).apply {

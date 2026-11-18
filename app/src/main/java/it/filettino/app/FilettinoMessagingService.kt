@@ -19,8 +19,9 @@ class FilettinoMessagingService : FirebaseMessagingService() {
 
         val savedUserId = prefs.getString(CallSignalConstants.KEY_USER_ID, "") ?: ""
         if (savedUserId.isNotBlank()) {
+            val appCtx = applicationContext
             Thread {
-                CallSignalConstants.patchUserFcmToken(savedUserId, token)
+                CallSignalConstants.patchUserFcmToken(savedUserId, token, appCtx)
             }.start()
         }
     }

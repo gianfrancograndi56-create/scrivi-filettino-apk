@@ -78,7 +78,8 @@ class RingtoneForegroundService : Service() {
         }
         if (action == CallSignalConstants.ACTION_DECLINE_CALL) {
             val callId = intent.getStringExtra(CallSignalConstants.EXTRA_CALL_ID) ?: currentCallId
-            Thread { CallSignalConstants.patchCallStatus(callId, "declined") }.start()
+            val appCtx = applicationContext
+            Thread { CallSignalConstants.patchCallStatus(callId, "declined", appCtx) }.start()
             stopAndFinish()
             return START_NOT_STICKY
         }
@@ -268,9 +269,10 @@ class RingtoneForegroundService : Service() {
     private fun startStatusPolling(callId: String) {
         watchTask?.cancel(true)
         var ticks = 0
+        val appCtx = applicationContext
         watchTask = scheduler.scheduleAtFixedRate({
             ticks++
-            if (ticks > 20 || !CallSignalConstants.isCallStillRinging(callId)) {
+            if (ticks > 20 || !CallSignalConstants.isCallStillRinging(callId, appCtx)) {
                 stopAndFinish()
             }
         }, 3, 2, TimeUnit.SECONDS)

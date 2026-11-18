@@ -135,8 +135,9 @@ class IncomingCallActivity : AppCompatActivity() {
         btnDecline.setOnClickListener {
             RingtoneForegroundService.stopRinging(this)
             val targetId = callId
+            val appCtx = applicationContext
             Thread {
-                CallSignalConstants.patchCallStatus(targetId, "declined")
+                CallSignalConstants.patchCallStatus(targetId, "declined", appCtx)
             }.start()
             finishAndRemoveTask()
         }

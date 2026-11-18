@@ -34,10 +34,41 @@ import org.json.JSONObject
 class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
+    private var pendingWebPermissionRequest: PermissionRequest? = null
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { }
+    ) {
+        val pendingReq = pendingWebPermissionRequest
+        pendingWebPermissionRequest = null
+        if (pendingReq != null) {
+            runOnUiThread {
+                try {
+                    val hasAudio = ContextCompat.checkSelfPermission(
+                        this,
+                        Manifest.permission.RECORD_AUDIO
+                    ) == PackageManager.PERMISSION_GRANTED
+                    val hasCamera = ContextCompat.checkSelfPermission(
+                        this,
+                        Manifest.permission.CAMERA
+                    ) == PackageManager.PERMISSION_GRANTED
+                    val grantable = pendingReq.resources.filter { res ->
+                        when (res) {
+                            PermissionRequest.RESOURCE_AUDIO_CAPTURE -> hasAudio
+                            PermissionRequest.RESOURCE_VIDEO_CAPTURE -> hasCamera
+                            else -> true
+                        }
+                    }
+                    if (grantable.isNotEmpty()) {
+                        pendingReq.grant(grantable.toTypedArray())
+                    } else {
+                        pendingReq.deny()
+                    }
+                } catch (_: Exception) {
+                }
+            }
+        }
+    }
 
     inner class NativeBridge {
         @JavascriptInterface
@@ -56,6 +87,11 @@ class MainActivity : AppCompatActivity() {
                 .putString(CallSignalConstants.KEY_USER_ID, userId)
                 .apply()
             fetchAndDispatchFcmToken()
+        }
+
+        @JavascriptInterface
+        fun syncAuthToken(idToken: String) {
+            CallSignalConstants.saveAuthToken(this@MainActivity, idToken)
         }
 
         @JavascriptInterface
@@ -226,7 +262,27 @@ class MainActivity : AppCompatActivity() {
             override fun onPermissionRequest(request: PermissionRequest?) {
                 request?.let { req ->
                     runOnUiThread {
-                        req.grant(req.resources)
+                        val needed = mutableListOf<String>()
+                        val resources = req.resources ?: emptyArray()
+                        if (resources.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE) &&
+                            ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED
+                        ) {
+                            needed.add(Manifest.permission.RECORD_AUDIO)
+                        }
+                        if (resources.contains(PermissionRequest.RESOURCE_VIDEO_CAPTURE) &&
+                            ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED
+                        ) {
+                            needed.add(Manifest.permission.CAMERA)
+                        }
+                        if (needed.isEmpty()) {
+                            req.grant(resources)
+                        } else {
+                            try {
+                                pendingWebPermissionRequest?.deny()
+                            } catch (_: Exception) {}
+                            pendingWebPermissionRequest = req
+                            permissionLauncher.launch(needed.toTypedArray())
+                        }
                     }
                 }
             }
@@ -406,7 +462,31 @@ class MainActivity : AppCompatActivity() {
         val callId = intent.getStringExtra(CallSignalConstants.EXTRA_CALL_ID) ?: ""
         val callAction = intent.getStringExtra(CallSignalConstants.EXTRA_CALL_ACTION) ?: ""
         if (callId.isNotBlank() && callAction.isNotBlank()) {
-            webView.loadUrl(buildStartUrl(callId, callAction))
+            val currentHost = if (::webView.isInitialized) {
+                Uri.parse(webView.url ?: "").host?.lowercase() ?: ""
+            } else {
+                ""
+            }
+            if (::webView.isInitialized && currentHost.contains("filettino-app")) {
+                val payload = JSONObject().apply {
+                    put("callId", callId)
+                    put("action", callAction)
+                    put("callType", intent.getStringExtra(CallSignalConstants.EXTRA_CALL_TYPE) ?: "audio")
+                    put("callerId", intent.getStringExtra(CallSignalConstants.EXTRA_CALLER_ID) ?: "")
+                    put("callerName", intent.getStringExtra(CallSignalConstants.EXTRA_CALLER_NAME) ?: "Iscritto Filettino")
+                    put("callerEmail", intent.getStringExtra(CallSignalConstants.EXTRA_CALLER_EMAIL) ?: "")
+                }
+                val escapedJson = JSONObject.quote(payload.toString())
+                webView.evaluateJavascript(
+                    "(function(){ if (typeof window.__onFilettinoNativeCallAction === 'function') { window.__onFilettinoNativeCallAction($escapedJson); return true; } return false; })()"
+                ) { handled ->
+                    if (handled != "true") {
+                        webView.loadUrl(buildStartUrl(callId, callAction))
+                    }
+                }
+            } else if (::webView.isInitialized) {
+                webView.loadUrl(buildStartUrl(callId, callAction))
+            }
         }
     }
 
@@ -467,7 +547,7 @@ class MainActivity : AppCompatActivity() {
                     val savedUserId = prefs.getString(CallSignalConstants.KEY_USER_ID, "") ?: ""
                     if (savedUserId.isNotBlank()) {
                         Thread {
-                            CallSignalConstants.patchUserFcmToken(savedUserId, token)
+                            CallSignalConstants.patchUserFcmToken(savedUserId, token, this@MainActivity)
                         }.start()
                     }
 
