@@ -11,6 +11,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Message
+import android.provider.ContactsContract
 import android.provider.Settings
 import android.view.ViewGroup
 import android.webkit.CookieManager
@@ -29,6 +30,7 @@ import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewFeature
 import com.google.firebase.FirebaseApp
 import com.google.firebase.messaging.FirebaseMessaging
+import org.json.JSONArray
 import org.json.JSONObject
 
 class MainActivity : AppCompatActivity() {
@@ -66,6 +68,32 @@ class MainActivity : AppCompatActivity() {
                     }
                 } catch (_: Exception) {
                 }
+            }
+        }
+        val contactsGranted = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.READ_CONTACTS
+        ) == PackageManager.PERMISSION_GRANTED
+        if (contactsGranted && ::webView.isInitialized) {
+            runOnUiThread {
+                webView.evaluateJavascript(
+                    "window.__onFilettinoContactsPermissionResult && window.__onFilettinoContactsPermissionResult(true);",
+                    null
+                )
+            }
+        }
+    }
+
+    private val contactsPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        runOnUiThread {
+            if (::webView.isInitialized) {
+                val boolLiteral = if (granted) "true" else "false"
+                webView.evaluateJavascript(
+                    "window.__onFilettinoContactsPermissionResult && window.__onFilettinoContactsPermissionResult($boolLiteral);",
+                    null
+                )
             }
         }
     }
@@ -155,6 +183,76 @@ class MainActivity : AppCompatActivity() {
                 } catch (_: Exception) {
                 }
             }
+        }
+
+        @JavascriptInterface
+        fun hasContactsPermission(): Boolean {
+            return ContextCompat.checkSelfPermission(
+                this@MainActivity,
+                Manifest.permission.READ_CONTACTS
+            ) == PackageManager.PERMISSION_GRANTED
+        }
+
+        @JavascriptInterface
+        fun requestContactsPermission() {
+            runOnUiThread {
+                if (hasContactsPermission()) {
+                    if (::webView.isInitialized) {
+                        webView.evaluateJavascript(
+                            "window.__onFilettinoContactsPermissionResult && window.__onFilettinoContactsPermissionResult(true);",
+                            null
+                        )
+                    }
+                    return@runOnUiThread
+                }
+                try {
+                    contactsPermissionLauncher.launch(Manifest.permission.READ_CONTACTS)
+                } catch (_: Exception) {
+                    if (::webView.isInitialized) {
+                        webView.evaluateJavascript(
+                            "window.__onFilettinoContactsPermissionResult && window.__onFilettinoContactsPermissionResult(false);",
+                            null
+                        )
+                    }
+                }
+            }
+        }
+
+        @JavascriptInterface
+        fun getPhoneContactsJson(): String {
+            if (!hasContactsPermission()) return "[]"
+            val results = JSONArray()
+            val seenPhones = HashSet<String>()
+            try {
+                val projection = arrayOf(
+                    ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                    ContactsContract.CommonDataKinds.Phone.NUMBER
+                )
+                contentResolver.query(
+                    ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                    projection,
+                    null,
+                    null,
+                    ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " ASC"
+                )?.use { cursor ->
+                    val nameIdx = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+                    val numIdx = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+                    while (cursor.moveToNext() && results.length() < 2500) {
+                        val rawName = if (nameIdx >= 0) cursor.getString(nameIdx)?.trim() ?: "" else ""
+                        val rawPhone = if (numIdx >= 0) cursor.getString(numIdx)?.trim() ?: "" else ""
+                        val digits = rawPhone.replace(Regex("[^0-9]"), "")
+                        if (digits.length < 7) continue
+                        val key = if (digits.length >= 9) digits.takeLast(9) else digits
+                        if (!seenPhones.add(key)) continue
+                        val obj = JSONObject()
+                        obj.put("name", rawName.ifBlank { rawPhone })
+                        obj.put("phone", rawPhone)
+                        results.put(obj)
+                    }
+                }
+            } catch (_: Exception) {
+            }
+            return results.toString()
         }
     }
 
@@ -520,7 +618,8 @@ class MainActivity : AppCompatActivity() {
     private fun requestRuntimePermissions() {
         val needed = mutableListOf(
             Manifest.permission.RECORD_AUDIO,
-            Manifest.permission.CAMERA
+            Manifest.permission.CAMERA,
+            Manifest.permission.READ_CONTACTS
         )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             needed.add(Manifest.permission.POST_NOTIFICATIONS)
