@@ -15,17 +15,30 @@ android {
         applicationId "it.filettino.app"
         minSdk 24
         targetSdk 34
-        versionCode 79
-        versionName "78.5"
+        versionCode 80
+        versionName "80.5"
+    }
+
+    signingConfigs {
+        debug {
+            if (file("filettino-debug.keystore").exists()) {
+                storeFile file("filettino-debug.keystore")
+                storePassword "android"
+                keyAlias "filettinoapp"
+                keyPassword "android"
+            }
+        }
     }
 
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.debug
         }
         debug {
             debuggable true
+            signingConfig signingConfigs.debug
         }
     }
 

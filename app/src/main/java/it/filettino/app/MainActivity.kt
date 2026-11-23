@@ -153,7 +153,7 @@ class MainActivity : AppCompatActivity() {
                     info.versionCode
                 }
             } catch (_: Exception) {
-                79
+                80
             }
         }
 
@@ -166,9 +166,9 @@ class MainActivity : AppCompatActivity() {
                     @Suppress("DEPRECATION")
                     packageManager.getPackageInfo(packageName, 0)
                 }
-                info.versionName ?: "78.5"
+                info.versionName ?: "80.5"
             } catch (_: Exception) {
-                "78.5"
+                "80.5"
             }
         }
 
@@ -776,7 +776,11 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
-        webView.loadUrl(buildStartUrl())
+        val noCacheHeaders = mapOf(
+            "Cache-Control" to "no-cache, no-store, must-revalidate",
+            "Pragma" to "no-cache"
+        )
+        webView.loadUrl(buildStartUrl(), noCacheHeaders)
         fetchAndDispatchFcmToken()
     }
 
