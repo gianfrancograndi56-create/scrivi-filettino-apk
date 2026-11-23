@@ -15,8 +15,8 @@ android {
         applicationId "it.filettino.app"
         minSdk 24
         targetSdk 34
-        versionCode 80
-        versionName "80.5"
+        versionCode 81
+        versionName "81.5"
     }
 
     signingConfigs {
@@ -37,7 +37,7 @@ android {
             signingConfig signingConfigs.debug
         }
         debug {
-            debuggable true
+            debuggable false
             signingConfig signingConfigs.debug
         }
     }
