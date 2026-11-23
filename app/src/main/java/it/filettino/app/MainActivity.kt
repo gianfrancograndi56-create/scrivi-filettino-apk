@@ -103,6 +103,41 @@ class MainActivity : AppCompatActivity() {
         fun isNativeAndroid(): Boolean = true
 
         @JavascriptInterface
+        fun getApkVersionCode(): Int {
+            return try {
+                val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    packageManager.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0))
+                } else {
+                    @Suppress("DEPRECATION")
+                    packageManager.getPackageInfo(packageName, 0)
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    info.longVersionCode.toInt()
+                } else {
+                    @Suppress("DEPRECATION")
+                    info.versionCode
+                }
+            } catch (_: Exception) {
+                78
+            }
+        }
+
+        @JavascriptInterface
+        fun getApkVersionName(): String {
+            return try {
+                val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    packageManager.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0))
+                } else {
+                    @Suppress("DEPRECATION")
+                    packageManager.getPackageInfo(packageName, 0)
+                }
+                info.versionName ?: "76.5"
+            } catch (_: Exception) {
+                "76.5"
+            }
+        }
+
+        @JavascriptInterface
         fun getFcmToken(): String {
             return getSharedPreferences(CallSignalConstants.PREFS_NAME, Context.MODE_PRIVATE)
                 .getString(CallSignalConstants.KEY_FCM_TOKEN, "") ?: ""
