@@ -26,17 +26,25 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewFeature
 import com.google.firebase.FirebaseApp
 import com.google.firebase.messaging.FirebaseMessaging
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
+import java.io.FileOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
     private var pendingWebPermissionRequest: PermissionRequest? = null
+    private var pendingUpdateApkFile: File? = null
+    @Volatile
+    private var isDownloadingApkUpdate: Boolean = false
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -98,9 +106,36 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private val installPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        val pendingFile = pendingUpdateApkFile
+        if (pendingFile != null && pendingFile.exists()) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || packageManager.canRequestPackageInstalls()) {
+                pendingUpdateApkFile = null
+                launchApkInstaller(pendingFile)
+            } else {
+                notifyApkUpdateProgress(
+                    "permission",
+                    100,
+                    "Attiva 'Consenti da questa origine' nelle impostazioni per completare l'aggiornamento."
+                )
+            }
+        }
+    }
+
     inner class NativeBridge {
         @JavascriptInterface
         fun isNativeAndroid(): Boolean = true
+
+        @JavascriptInterface
+        fun supportsInAppApkUpdate(): Boolean = true
+
+        @JavascriptInterface
+        fun downloadAndInstallApk(url: String) {
+            val safeUrl = if (url.startsWith("https://") || url.startsWith("http://")) url else return
+            startInAppApkUpdate(safeUrl)
+        }
 
         @JavascriptInterface
         fun getApkVersionCode(): Int {
@@ -118,7 +153,7 @@ class MainActivity : AppCompatActivity() {
                     info.versionCode
                 }
             } catch (_: Exception) {
-                78
+                79
             }
         }
 
@@ -131,9 +166,9 @@ class MainActivity : AppCompatActivity() {
                     @Suppress("DEPRECATION")
                     packageManager.getPackageInfo(packageName, 0)
                 }
-                info.versionName ?: "76.5"
+                info.versionName ?: "78.5"
             } catch (_: Exception) {
-                "76.5"
+                "78.5"
             }
         }
 
@@ -306,6 +341,157 @@ class MainActivity : AppCompatActivity() {
             host == "127.0.0.1"
     }
 
+    private fun notifyApkUpdateProgress(status: String, percent: Int, message: String) {
+        runOnUiThread {
+            if (::webView.isInitialized) {
+                val s = JSONObject.quote(status)
+                val m = JSONObject.quote(message)
+                webView.evaluateJavascript(
+                    "window.__onFilettinoApkUpdateProgress && window.__onFilettinoApkUpdateProgress($s, $percent, $m);",
+                    null
+                )
+            }
+        }
+    }
+
+    private fun startInAppApkUpdate(downloadUrl: String) {
+        if (isDownloadingApkUpdate) return
+        isDownloadingApkUpdate = true
+        notifyApkUpdateProgress("downloading", 2, "Avvio scaricamento aggiornamento…")
+
+        Thread {
+            var conn: HttpURLConnection? = null
+            try {
+                var currentUrl = downloadUrl
+                var redirects = 0
+                while (redirects < 8) {
+                    val urlObj = URL(currentUrl)
+                    val c = (urlObj.openConnection() as HttpURLConnection).apply {
+                        requestMethod = "GET"
+                        connectTimeout = 20000
+                        readTimeout = 30000
+                        instanceFollowRedirects = false
+                        setRequestProperty("User-Agent", "FilettinoApp/78.5 (Android)")
+                        setRequestProperty("Accept", "application/vnd.android.package-archive, application/octet-stream, */*")
+                    }
+                    conn = c
+                    val code = c.responseCode
+                    if (code == HttpURLConnection.HTTP_MOVED_PERM ||
+                        code == HttpURLConnection.HTTP_MOVED_TEMP ||
+                        code == HttpURLConnection.HTTP_SEE_OTHER ||
+                        code == 307 || code == 308
+                    ) {
+                        val location = c.getHeaderField("Location")
+                        c.disconnect()
+                        conn = null
+                        if (location.isNullOrBlank()) {
+                            throw Exception("Redirect senza destinazione")
+                        }
+                        currentUrl = URL(urlObj, location).toString()
+                        redirects++
+                    } else {
+                        break
+                    }
+                }
+
+                val activeConn = conn ?: throw Exception("Connessione non riuscita")
+                if (activeConn.responseCode !in 200..299) {
+                    throw Exception("Server ha risposto ${activeConn.responseCode}")
+                }
+
+                val totalBytes = activeConn.contentLengthLong
+                val updatesDir = File(cacheDir, "updates").apply { mkdirs() }
+                val apkFile = File(updatesDir, "filettino-update.apk")
+                if (apkFile.exists()) apkFile.delete()
+
+                activeConn.inputStream.use { input ->
+                    FileOutputStream(apkFile).use { output ->
+                        val buffer = ByteArray(16 * 1024)
+                        var downloaded = 0L
+                        var lastReportedPct = 2
+                        var lastReportMs = 0L
+                        var read = input.read(buffer)
+                        while (read != -1) {
+                            output.write(buffer, 0, read)
+                            downloaded += read
+                            val now = System.currentTimeMillis()
+                            val pct = if (totalBytes > 0) {
+                                ((downloaded * 100L) / totalBytes).toInt().coerceIn(2, 99)
+                            } else {
+                                (lastReportedPct + 1).coerceAtMost(95)
+                            }
+                            if (pct >= lastReportedPct + 3 || now - lastReportMs > 350L) {
+                                lastReportedPct = pct
+                                lastReportMs = now
+                                notifyApkUpdateProgress("downloading", pct, "Scaricamento aggiornamento… $pct%")
+                            }
+                            read = input.read(buffer)
+                        }
+                        output.flush()
+                    }
+                }
+
+                if (!apkFile.exists() || apkFile.length() < 100_000L) {
+                    throw Exception("File aggiornamento non valido")
+                }
+
+                notifyApkUpdateProgress("downloading", 100, "Scaricamento completato!")
+                runOnUiThread {
+                    launchApkInstaller(apkFile)
+                }
+            } catch (_: Exception) {
+                notifyApkUpdateProgress(
+                    "error",
+                    0,
+                    "Apro il download nel browser…"
+                )
+                runOnUiThread {
+                    launchExternalUrl(downloadUrl)
+                }
+            } finally {
+                try {
+                    conn?.disconnect()
+                } catch (_: Exception) {
+                }
+                isDownloadingApkUpdate = false
+            }
+        }.start()
+    }
+
+    private fun launchApkInstaller(apkFile: File) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
+                pendingUpdateApkFile = apkFile
+                notifyApkUpdateProgress(
+                    "permission",
+                    100,
+                    "Attiva 'Consenti da questa origine' e torna indietro: l'aggiornamento partirà subito!"
+                )
+                val settingsIntent = Intent(
+                    Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    Uri.parse("package:$packageName")
+                )
+                installPermissionLauncher.launch(settingsIntent)
+                return
+            }
+
+            notifyApkUpdateProgress("installing", 100, "Apertura aggiornamento… tocca Aggiorna!")
+            val apkUri = FileProvider.getUriForFile(
+                this,
+                "$packageName.fileprovider",
+                apkFile
+            )
+            val installIntent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(apkUri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(installIntent)
+        } catch (_: Exception) {
+            notifyApkUpdateProgress("error", 0, "Impossibile aprire l'installazione automatica.")
+        }
+    }
+
     private fun launchExternalUrl(url: String) {
         try {
             if (url.startsWith("intent://") || url.startsWith("intent:")) {
@@ -366,6 +552,12 @@ class MainActivity : AppCompatActivity() {
         }
 
         webView.addJavascriptInterface(NativeBridge(), "FilettinoNative")
+
+        webView.setDownloadListener { url, _, _, _, _ ->
+            if (!url.isNullOrBlank()) {
+                launchExternalUrl(url)
+            }
+        }
 
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
